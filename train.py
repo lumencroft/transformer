@@ -68,7 +68,8 @@ config = GPTConfig(
     n_layer=4,      # 베이스라인이니까 가볍게 시작
     n_head=4, 
     n_embd=128,
-    dropout=0.0
+    dropout=0.0,
+    use_conv=False
 )
 model = GPT(config)
 model.to(device)
