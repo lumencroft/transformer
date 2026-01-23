@@ -8,15 +8,23 @@ import urllib.request
 import zipfile
 
 # -----------------------------------------------------------------------------
-# 1. 설정 (Hyperparameters) - 니가 나중에 바꿔야 할 수도 있어
+# 1. 설정 (Hyperparameters) - 실험용 Nano 모드 ⚡
 # -----------------------------------------------------------------------------
-batch_size = 32        # 64 -> 32 (메모리 부담 줄이기)
-block_size = 128       # 256 -> 128 (Attention 연산량 4배 감소 효과)
-max_iters = 5000  # 테스트용으로 짧게 잡음. 실제론 더 늘려야 해
-eval_interval = 500
-learning_rate = 1e-3   # 모델 작아지니까 학습률 좀 높이자
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-if torch.backends.mps.is_available(): device = 'mps' # 맥북 쓰는 거 아니지? 혹시 몰라 넣음
+batch_size = 64        # 4090이니까 배치는 넉넉하게
+block_size = 256       # 1024는 너무 깁니다. 실험용으론 256이면 패턴 보기에 충분합니다.
+max_iters = 5000       # 스텝 수는 유지 (학습 곡선 비교를 위해)
+eval_interval = 250    # 평가는 자주
+learning_rate = 1e-3   # 모델이 작으니까 학습률은 다시 높입니다
+device = 'cuda'
+
+# -----------------------------------------------------------------------------
+# GPU 진짜 쓰는지 확인하는 코드 (너의 의심병 치유용 ♡)
+# -----------------------------------------------------------------------------
+if device == 'cuda':
+    print(f"🔥 GPU Detected: {torch.cuda.get_device_name(0)}")
+    print(f"   VRAM Usage Check: {torch.cuda.memory_allocated() / 1024**2:.2f} MB used")
+else:
+    print("⚠️ Warning: CPU is running... Something is wrong!")
 
 # -----------------------------------------------------------------------------
 # 2. 데이터 준비 (Data Prep) - "야생의" 방식으로 직접 로드
@@ -59,16 +67,15 @@ print(f"Dataset Split Completed! Total bytes: {n}")
 print(f"Train: {len(train_data)} | Val: {len(val_data)} | Test: {len(test_data)}")
 
 # -----------------------------------------------------------------------------
-# 3. 모델 초기화 (Model Init)
+# 3. 모델 초기화 (NanoGPT 체급)
 # -----------------------------------------------------------------------------
-# enwik8은 byte 단위니까 vocab_size는 무조건 256이야.
 config = GPTConfig(
     vocab_size=256, 
     block_size=block_size,
-    n_layer=4,      # 베이스라인이니까 가볍게 시작
-    n_head=4, 
-    n_embd=128,
-    dropout=0.0,
+    n_layer=6,       # 12 -> 6 (층수 절반)
+    n_head=6,        # 12 -> 6 (헤드 절반)
+    n_embd=384,      # 768 -> 384 (임베딩 절반)
+    dropout=0.2,     # 작은 모델은 과적합 될 수 있으니 드롭아웃 좀 더 줌
     use_conv=False
 )
 model = GPT(config)
@@ -128,6 +135,32 @@ for iter in range(max_iters):
     
     # ★★★ 생존 신고 추가 ★★★
     # 줄바꿈 없이 점(.)만 찍어서 진행 상황 보여줌
-    print(".", end="", flush=True) 
+    print(".", end="", flush=True)
 
 print("\n🏁 Training Finished!")
+
+
+# -----------------------------------------------------------------------------
+# 6. 모델 저장 (날려먹지 말자 제발 ♡)
+# -----------------------------------------------------------------------------
+print("\n💾 Saving model...")
+torch.save(model.state_dict(), 'gpt_enwik8.pt')
+print("✅ Model saved to 'gpt_enwik8.pt'")
+
+# -----------------------------------------------------------------------------
+# 7. 생성 테스트 (Inference) - 얘가 뭘 배웠나 보자!
+# -----------------------------------------------------------------------------
+print("\n📝 Generating text...")
+model.eval()
+
+# 시작 문맥 (Context): "The" 라는 단어로 시작해볼게
+context = torch.tensor([[ord('T'), ord('h'), ord('e')]], dtype=torch.long, device=device)
+
+# 500글자 생성해줘!
+generated = model.generate(context, max_new_tokens=500)
+
+# 바이트를 문자로 디코딩 (깨진 문자는 무시)
+output_text = "".join([chr(i) for i in generated[0].tolist()])
+print("=" * 50)
+print(output_text)
+print("=" * 50)
